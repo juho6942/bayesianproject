@@ -14,7 +14,7 @@ pre = F
 ## 0) Packages
 ## ============================================================
 ```{r, echo=F}
-if (T) {
+ 
 required_pkgs <- c(
   "tidybayes", "brms", "ggplot2", "metadat",
   "dplyr", "lme4", "posterior",
@@ -43,7 +43,7 @@ if (F){
 }
 library(car)  #VHI
 library(rstudioapi) #parallel chains in brms
-}
+
 ```
 
 
@@ -398,6 +398,8 @@ write.csv(long_df,"NAlessdata.csv",sep=";",row.names = F)
 ```
 
 ```{r}
+
+d=getData(1)
 cols = c("CRP","WBC","NEU","LYM","PLT","CREA","ALB","BUN","GBIL","RBC","SODIUM")
 sd = vector(mode="numeric",len =  length(cols))
 mu = vector(mode="numeric",len =  length(cols))
@@ -409,29 +411,61 @@ for (c in 1:length(cols)){
 
 
 quants = seq(0,1,0.001)
+
 for (c in 1:length(cols)) {
   
-  
+  #pdf(file=paste(c,".pdf"))
   #sample_quant = quantile(d[[cols[c]]],quants)
   #norm_quant = qnorm(quants, sd = sd[c], mean = mu[c])
   #student_quant = qt(quants, df = 3) * sd[c] + mu[c]
   #exp_quant = qexp(quants, rate = 1 / mu[c])
   
+  #data = d[[cols[c]]][d[[cols[c]]]>0]  %>% log() %>% sort()
+  data=d[[c]] 
+  #normalized = ((data-mean(data))/sd(data))  
   # Generate the plots directly in the Plots tab
-  plot(sort(d[[c]]),main=cols[c])
-  #qqplot(norm_quant, sample_quant, main = paste("normal ", cols[c]));abline(norm_quant[100],norm_quant[900],col="red")
   
-  #qqplot(student_quant, sample_quant, main = paste("T ",cols[c]));abline(student_quant[100],student_quant[900],col="red")
-  #qqplot(exp_quant, sample_quant, main = paste("EXP ",cols[c]));abline(exp_quant[100],exp_quant[900],col="red")
+  #b = seq(min(data),max(data),len=80)
+
+  #hist(data %>% sort(),breaks=b,main=paste("hist ", cols[c]))
+  plot(density(data), main=cols[c])
+  curve(dnorm(x), add=T,col="red")
+  
   
   #ABLine aivan vituillaan
-  qqPlot(d[[cols[c]]],distribution="norm",ylab=cols[c])
-  qqPlot(d[[cols[c]]],distribution="t",df=3,ylab=cols[c])
-  qqPlot(d[[cols[c]]],distribution="exp",ylab=cols[c])
-
+  #qqPlot(d[[cols[c]]],distribution="norm",ylab=cols[c])
+  #qqPlot(d[[cols[c]]],distribution="t",df=3,ylab=cols[c])
+  #qqPlot(d[[cols[c]]],distribution="exp",ylab=cols[c])
+  #dev.off()
 
 }
+for (c in c("RBC","ALB")) {
+  d[c] = (d[[c]]-mean(d[[c]]))/sd(d[[c]])
+  
+}
+plot(density(d[["CRP"]]))
+for (c in c("CRP","WBC","NEU","LYM","PLT","CREA","BUN","GBIL","SODIUM")) {
+  col = d[[c]]
+  minim = min(col[col>0])
+  
+  print(sum(col==0))
+  col[col<=0] = minim
+  print(sum(col==0))
+  logged = col %>% log() 
+  lognorm = (logged - mean(logged))/sd(logged)
+  d[c] = lognorm
+  
+}
+
+# write.csv(d, file("standardized_data.csv"))
+
+
 ###Tjoo Jatkan tästä huomenna, mutta ideana että ei voi vaan skaalata suoraan vaan pitää ettiä sopiva jakauma varmaankin
+# Example: decades with enough n per band
+
+d$age_br <- cut(d$AGE, breaks = c(0,30,60,Inf),
+                right = FALSE, include.lowest = TRUE)
+
 
 ```
 Sodium voisi olla student-t
@@ -440,14 +474,15 @@ RCB saleen normi
 ```{r}
 #helper for getting data
 getData <- function(x){
-  # data with na's
+  # current best data
   if (x==1)
-    d =read.csv("trimmed_data.csv")
+    d =read.csv("standardized_data.csv")
     
   #5 times micied NA-less data
   else if (x==2)
     d = read.csv("NAlessdata.csv")
-  
+  else if (x==3)
+    d = read.csv("trimmed_data.csv")
 
   d
 }
@@ -470,8 +505,7 @@ https://cran.r-project.org/web/packages/brms/vignettes/brms_missings.html
 ##### DATA #####
 
 d = getData(1)
-d2 = getData(2)
-d2s = sample_n(d2,1000)
+
 
 ```
 Täytyy keksiä joku fiksumpi tapa kirjottaa noita micitettyjä datoja. Ehkä erillisille CSV? 
@@ -482,16 +516,11 @@ Factors? Näillä saa hierarkian rakennettua(?)
 
 ```{r}
 ##### FORMULA #####
-f = d %>% select(-any_of("bact_num")) %>% names() %>% paste(collapse=" + ") %>% paste("bact_num ~ ",.) %>% as.formula()
-f_pooled = as.formula("bact_num ~ 1 + MCV + HGB + PLT + MCHC + RDW + MPV + 
-    LYM + MONO + EOS + BASO + NT + APTT + FIB + SODIUM + POTASS + 
-    CA + PHOS + MG + CREA + BUN + HS + GBIL + TP + ALB + AMY + 
-    PAMY + LIP + CHE + AP + ASAT + ALAT + GGT + LDH + CK + GLU + 
-    TRIG + CHOL + CRP + BASOR + EOSR + MONOR + NEUR + PDW + RBC + 
-    WBC")
-#drop id sex age
-#
-f_pooled = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEUR+ PLT+ CREA+ ALB+ BUN+ GBIL+ SODIUM+ RBC")
+
+f_pooled = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEU+ LYM + PLT+ CREA+ ALB+ BUN+ GBIL+ SODIUM+ RBC")
+f_sex = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEU+ LYM + PLT + ALB+ BUN+ GBIL+ SODIUM+ (RBC+CREA|SEX)")
+f_age = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEU+ LYM + PLT  + GBIL+ SODIUM+ (ALB+ BUN+RBC+CREA|age_br)")
+f_agesex = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEU+ LYM + PLT  + GBIL+ SODIUM+ (ALB+BUN|age_br)+(RBC+CREA|SEX)")
 
 ```
 
@@ -499,8 +528,8 @@ f_pooled = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEUR+ PLT+ CREA+ ALB+ BUN+ GBIL
 
 ```{r}
 ##### PRIORS #####
-pooled_prior = set_prior("normal(0,1)",class='b')
-intercept_prior = set_prior("normal(0,1)",class="intercept")
+#pooled_prior = set_prior("normal(0,1)",class='b')
+#intercept_prior = set_prior("normal(0,5)",class="intercept")
 
 ```
 Nää pitäis varmaan skaalata jotenkin 
@@ -511,13 +540,31 @@ Pitäskö tän olla bernoulli?
 ```{r}
 ##### MODEL ######
 
-pooled_m = brm(formula  =f_pooled,
+#pooled_m = brm(formula  =f_pooled,
+#               family="bernoulli",
+#               data=d,
+#               prior=pooled_prior,
+#               cores=4)
+
+sex_m =brm(formula  =f_sex,
                family="bernoulli",
-               data=d2s,
-               prior=pooled_prior,
+               data=d,
+               
+               cores=4)
+age_m = brm(formula  =f_age,
+               family="bernoulli",
+               data=d,
+               
+               cores=4)
+
+agesex_m = brm(formula  =f_agesex,
+               family="bernoulli",
+               data=d,
                cores=4)
 
 pooled_m
+sex_m
+age_m
 ```
 
 
