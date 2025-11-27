@@ -380,7 +380,9 @@ df[WBC][rowSums(is.na(df[WBC]))!=0,]
 
 
 dropped =subset(data, select= c(NEU, LYMR,MCH, HCT,bacteremia))
-newcsv = subset(data, select= -c(NEU, LYMR,MCH, HCT,BloodCulture,bacteremia))
+newcsv = subset(data, select= -c(BloodCulture,bacteremia))
+newcsv = subset(newcsv,select=c("CRP","WBC","NEU","LYM","PLT","CREA","ALB","BUN","GBIL","RBC","SODIUM","SEX","AGE","bact_num"))
+newcsv = drop_na(newcsv)
 write.csv(newcsv, file="trimmed_data.csv",row.names = F)
 write.csv(dropped,file="Excluded_colls.csv", sep=";",row.names = F)
 
@@ -395,6 +397,45 @@ write.csv(long_df,"NAlessdata.csv",sep=";",row.names = F)
 }
 ```
 
+```{r}
+cols = c("CRP","WBC","NEU","LYM","PLT","CREA","ALB","BUN","GBIL","RBC","SODIUM")
+sd = vector(mode="numeric",len =  length(cols))
+mu = vector(mode="numeric",len =  length(cols))
+
+for (c in 1:length(cols)){
+  sd[c] = sd(d[[cols[c]]])
+  mu[c] = mean(d[[cols[c]]])
+}
+
+
+quants = seq(0,1,0.001)
+for (c in 1:length(cols)) {
+  
+  
+  #sample_quant = quantile(d[[cols[c]]],quants)
+  #norm_quant = qnorm(quants, sd = sd[c], mean = mu[c])
+  #student_quant = qt(quants, df = 3) * sd[c] + mu[c]
+  #exp_quant = qexp(quants, rate = 1 / mu[c])
+  
+  # Generate the plots directly in the Plots tab
+  plot(sort(d[[c]]),main=cols[c])
+  #qqplot(norm_quant, sample_quant, main = paste("normal ", cols[c]));abline(norm_quant[100],norm_quant[900],col="red")
+  
+  #qqplot(student_quant, sample_quant, main = paste("T ",cols[c]));abline(student_quant[100],student_quant[900],col="red")
+  #qqplot(exp_quant, sample_quant, main = paste("EXP ",cols[c]));abline(exp_quant[100],exp_quant[900],col="red")
+  
+  #ABLine aivan vituillaan
+  qqPlot(d[[cols[c]]],distribution="norm",ylab=cols[c])
+  qqPlot(d[[cols[c]]],distribution="t",df=3,ylab=cols[c])
+  qqPlot(d[[cols[c]]],distribution="exp",ylab=cols[c])
+
+
+}
+###Tjoo Jatkan tästä huomenna, mutta ideana että ei voi vaan skaalata suoraan vaan pitää ettiä sopiva jakauma varmaankin
+
+```
+Sodium voisi olla student-t
+RCB saleen normi
 
 ```{r}
 #helper for getting data
@@ -422,14 +463,15 @@ https://cran.r-project.org/web/packages/brms/vignettes/brms_missings.html
 
 
 ## Modeling
-Nojoo tossa poolatussa on aika paljon korjattavaa ihan suoralta kädeltä mutta en jaksa tänään enempää 
+
 
 
 ```{r}
 ##### DATA #####
+
 d = getData(1)
-subset_d = 
-d2 = getData(2)  
+d2 = getData(2)
+d2s = sample_n(d2,1000)
 
 ```
 Täytyy keksiä joku fiksumpi tapa kirjottaa noita micitettyjä datoja. Ehkä erillisille CSV? 
@@ -441,13 +483,15 @@ Factors? Näillä saa hierarkian rakennettua(?)
 ```{r}
 ##### FORMULA #####
 f = d %>% select(-any_of("bact_num")) %>% names() %>% paste(collapse=" + ") %>% paste("bact_num ~ ",.) %>% as.formula()
-f_pooled = as.formula("bact_num ~ MCV + HGB + PLT + MCHC + RDW + MPV + 
+f_pooled = as.formula("bact_num ~ 1 + MCV + HGB + PLT + MCHC + RDW + MPV + 
     LYM + MONO + EOS + BASO + NT + APTT + FIB + SODIUM + POTASS + 
     CA + PHOS + MG + CREA + BUN + HS + GBIL + TP + ALB + AMY + 
     PAMY + LIP + CHE + AP + ASAT + ALAT + GGT + LDH + CK + GLU + 
     TRIG + CHOL + CRP + BASOR + EOSR + MONOR + NEUR + PDW + RBC + 
     WBC")
 #drop id sex age
+#
+f_pooled = as.formula(" bact_num ~ 1 + CRP+ WBC+ NEUR+ PLT+ CREA+ ALB+ BUN+ GBIL+ SODIUM+ RBC")
 
 ```
 
@@ -456,7 +500,7 @@ f_pooled = as.formula("bact_num ~ MCV + HGB + PLT + MCHC + RDW + MPV +
 ```{r}
 ##### PRIORS #####
 pooled_prior = set_prior("normal(0,1)",class='b')
-
+intercept_prior = set_prior("normal(0,1)",class="intercept")
 
 ```
 Nää pitäis varmaan skaalata jotenkin 
@@ -467,14 +511,13 @@ Pitäskö tän olla bernoulli?
 ```{r}
 ##### MODEL ######
 
-pooled_m = brm(formula = f,
+pooled_m = brm(formula  =f_pooled,
                family="bernoulli",
-               data=d,
+               data=d2s,
                prior=pooled_prior,
-               cores=4
-               )
-pooled_m
+               cores=4)
 
+pooled_m
 ```
 
 
